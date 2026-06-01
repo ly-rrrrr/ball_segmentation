@@ -1,9 +1,10 @@
 # ball_segmentation
 
-`ball_segmentation` 是一个基于 Segment Anything Model（SAM）的球状目标/颗粒掩码分割项目。项目当前包含两条主要流程：
+`ball_segmentation` 是一个基于 Segment Anything Model（SAM）的球状目标/颗粒掩码分割项目。项目当前包含三条主要流程：
 
 1. 使用本地 Hugging Face SAM 模型对显微/膜面图像进行自动掩码生成。
 2. 根据参考图像的掩码面积分布，以及可选的圆度、长宽比、填充率、凸性等形状特征，对目标图像中的候选掩码进行二次筛选，并输出合并掩码和可视化叠加图。
+3. 基于图像处理的自适应球种子检测，对 SAM 掩码进行"必须有球种子支撑"的验证性过滤，解决面积/形状过滤在前景/背景特征重叠时失效的问题。
 
 项目适合用于对膜面图像中的球状颗粒、孔洞或相似小目标进行批量分割与筛选。当前仓库只提交代码、原始示例图和少量代表性分割结果图；完整的逐 mask PNG 与大体积 summary JSON 可按本文命令重新生成。
 
@@ -19,9 +20,15 @@ ball_segmentation/
 │   └── *_area_filtered_from_858_split36/
 │       ├── *_area_filtered_union.png
 │       └── *_area_filtered_overlay.png
+├── *_ball_seed_filter_p965/
+│   ├── ball_seed_map.png
+│   ├── ball_seed_overlay.png
+│   ├── filtered_union.png
+│   └── filtered_overlay.png
 └── tools/
     ├── run_sam_automatic_mask.py
-    └── filter_sam_masks_by_area.py
+    ├── filter_sam_masks_by_area.py
+    └── filter_sam_masks_by_ball_seeds.py
 ```
 
 ## 环境依赖
@@ -166,6 +173,77 @@ python tools/filter_sam_masks_by_area.py \
 - `--shape-filter off|ball|ball_or_cluster`：关闭形状筛选、筛选单个球状目标，或允许球状簇。
 - `--shape-mask-source auto|mask_file|upscaled_mask_file`：选择用于计算形状特征的掩码来源。
 - `--reject-border-touching`：剔除接触图像边界的掩码。
+
+## 3. 基于球种子（Ball Seed）的掩码验证
+
+`filter_sam_masks_by_area.py` 的面积和形状过滤在以下情况会失效：噪声碎片与真实小球在面积分布和形状特征空间上高度重叠（尤其在 split36 下采样分辨率受限时），仅靠掩码几何无法可靠区分前景和背景。
+
+`filter_sam_masks_by_ball_seeds.py` 采用完全不同的策略：**独立于 SAM 从原图中检测"球种子"（ball seed），然后要求每个 SAM 掩码内部至少包含一个球种子才能保留**。这是一种"双重验证"（consensus）机制 — SAM 和图像处理检测器必须同时认为某位置是球，该掩码才被接受。
+
+### 球种子检测原理
+
+脚本使用纯图像处理方法（无需 ML 依赖，仅 stdlib + struct + zlib）在原图上滑动窗口扫描：
+
+1. **径向对比度响应**：对每个候选位置，计算中心区域与外围环形区域的平均灰度差 `response = |center_mean - outer_ring_mean|`。球状目标在 SEM 图像中表现为亮斑，其中心与周边的灰度对比度显著。
+2. **百分位阈值**：取响应值的前 `--seed-percentile`（默认 96.5%）作为候选。
+3. **非极大值抑制（NMS）**：在 `--seed-nms-radius` 范围内去重，确保每个球只有一个种子点。
+4. **径向平衡校验**：检查种子点四周的灰度是否均匀过渡，过滤掉边缘、纹理等假阳性。
+
+### 掩码过滤规则
+
+对每个 SAM 掩码，判断：
+
+- **种子命中**：掩码内部包含至少 `--min-seeds-in-mask`（默认 1）个球种子 → 保留。
+- **tile 边界邻近种子**：掩码触及 tile 边界（split36 碎片），且其全局包围盒附近有球种子 → 保留（避免错误丢弃跨 tile 边界的球碎片）。
+- **高 SAM 分保护**：SAM 评分 ≥ `--keep-high-score-no-seed`（默认 0.98）的掩码即使无种子也保留，防止过滤掉 SAM 高置信度的有效掩码。
+
+不满足以上任何条件的掩码被丢弃。
+
+### 基本命令
+
+```bash
+python tools/filter_sam_masks_by_ball_seeds.py \
+  --image demo/858f3853776825b04e3608e2442d904a.bmp \
+  --summary demo/858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale/858f3853776825b04e3608e2442d904a_sam_auto_summary.json \
+  --output-dir demo/858f_ball_seed_filter_p965
+```
+
+Windows PowerShell 示例：
+
+```powershell
+python tools/filter_sam_masks_by_ball_seeds.py `
+  --image demo\858f3853776825b04e3608e2442d904a.bmp `
+  --summary demo\858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale\858f3853776825b04e3608e2442d904a_sam_auto_summary.json `
+  --output-dir demo\858f_ball_seed_filter_p965
+```
+
+### 主要参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--seed-radii` | `2,3,4,5,6` | 扫描的球半径范围（像素），逗号分隔 |
+| `--seed-stride` | `2` | 扫描窗口步长，越小越密集但越慢 |
+| `--seed-percentile` | `97.5` | 响应值百分位阈值，越高种子越少、越精 |
+| `--min-seed-response` | `4.0` | 响应值下限 |
+| `--seed-nms-radius` | `3` | NMS 抑制半径 |
+| `--radial-balance-max` | `2.5` | 径向平衡度上限，超过视为非球 |
+| `--min-seeds-in-mask` | `1` | 掩码内最少种子数 |
+| `--keep-high-score-no-seed` | `0.0` | 无种子但 SAM 分超过此值也保留（0=禁用） |
+
+### 输出文件
+
+```text
+*_ball_seed_filter_p965/
+├── ball_seed_map.png        # 球种子二值图
+├── ball_seed_overlay.png    # 球种子叠加在原图上的可视化（红点）
+├── filtered_union.png       # 过滤后的合并掩码
+├── filtered_overlay.png     # 过滤后的叠加可视化
+└── filtered_summary.json    # 过滤统计与每条掩码的判定记录
+```
+
+### 与面积/形状过滤的关系
+
+两种过滤策略可以串联使用：先用 `filter_sam_masks_by_area.py` 做面积/形状粗筛，再用 `filter_sam_masks_by_ball_seeds.py` 做球种子验证。两者互补 — 面积/形状过滤从"掩码像不像球"的角度筛选，球种子过滤从"原图中有没有球"的角度验证。
 
 ## 本次整理与 GitHub 同步命令
 

@@ -14,3 +14,11 @@ demo/**/*_sam_auto_split_tiles/
 demo/**/*_sam_auto_summary.json
 demo/**/*_area_filtered_summary.json
 demo/新膜照片/
+
+# Temporary debug / experimental outputs (not for version control)
+demo/_debug_*.png
+demo/858f3853776825b04e3608e2442d904a_verified*/
+demo/858f3853776825b04e3608e2442d904a_verify_pt*/
+demo/858f3853776825b04e3608e2442d904a_refined*/
+tools/verify_sam_masks.py
+tools/refine_sam_masks.py

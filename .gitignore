@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.log
+.DS_Store
+Thumbs.db
+
+# Large generated SAM artifacts are reproducible from the commands in README.
+demo/**/*_sam_auto_masks/
+demo/**/*_sam_auto_upscaled_masks/
+demo/**/*_sam_auto_split_tiles/
+demo/**/*_sam_auto_summary.json
+demo/**/*_area_filtered_summary.json
+demo/新膜照片/

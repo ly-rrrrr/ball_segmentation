@@ -7,6 +7,28 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local assistant state and source snapshots used during repository curation.
+.claude/
+v3_v41_source_manual_scripts/
+public_ball2k_viewer/
+
+# Models, datasets, and generated experiment outputs are distributed externally.
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+pretrained/
+weights/
+checkpoints/
+data/
+work/
+outputs/
+demo/小球2K放大倍数/
+demo/小球2K放大倍数_split*/
+demo/*_dataset*/
+demo/*_model*/
+demo/*_apply*/
+
 # Large generated SAM artifacts are reproducible from the commands in README.
 demo/**/*_sam_auto_masks/
 demo/**/*_sam_auto_upscaled_masks/

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2K 小球分割结果查看器</title>
+  <style>
+    :root { color-scheme: light; --bg:#f5f7fb; --panel:#fff; --border:#d9e0ec; --text:#18202f; --muted:#657086; --blue:#1769e0; --blue-soft:#e8f1ff; --shadow:0 8px 22px rgba(24,32,47,.08); --img-width:100%; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:Arial,"Microsoft YaHei",sans-serif; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:64px; padding:10px 18px; border-bottom:1px solid var(--border); background:var(--panel); box-shadow:var(--shadow); }
+    h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:0; }
+    .toolbar { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+    .toolbar label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; }
+    select, button { height:34px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); font:inherit; font-size:13px; }
+    select { min-width:220px; padding:0 32px 0 10px; }
+    button { min-width:38px; padding:0 10px; cursor:pointer; }
+    button:hover, select:hover { border-color:#8fb6ee; }
+    .main { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; height:calc(100vh - 64px); padding:12px; }
+    .pane { display:flex; min-width:0; min-height:0; flex-direction:column; overflow:hidden; border:1px solid var(--border); border-radius:8px; background:var(--panel); box-shadow:var(--shadow); }
+    .pane-head { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:48px; padding:10px 12px; border-bottom:1px solid var(--border); }
+    .pane-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:700; }
+    .badge { flex:0 0 auto; padding:4px 8px; border-radius:999px; background:var(--blue-soft); color:var(--blue); font-size:12px; font-weight:700; }
+    .image-wrap { flex:1; min-height:0; overflow:auto; background:linear-gradient(45deg,#f0f3f8 25%,transparent 25%),linear-gradient(-45deg,#f0f3f8 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f0f3f8 75%),linear-gradient(-45deg,transparent 75%,#f0f3f8 75%); background-size:24px 24px; background-position:0 0,0 12px,12px -12px,-12px 0; }
+    .image-stage { position:relative; display:grid; min-width:100%; min-height:100%; align-items:start; justify-items:center; padding:14px; }
+    .image-stage img { display:block; width:var(--img-width); max-width:none; height:auto; border:1px solid rgba(24,32,47,.18); background:#fff; }
+    .sync-source { cursor:crosshair; }
+    .sync-dot { position:absolute; z-index:3; width:5px; height:5px; pointer-events:none; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.72); border-radius:999px; background:rgba(210,28,28,.54); box-shadow:0 0 0 1px rgba(210,28,28,.18); opacity:0; }
+    .sync-dot.visible { opacity:.72; }
+    .info { display:grid; gap:6px; padding:10px 12px; border-top:1px solid var(--border); color:var(--muted); font-size:12px; line-height:1.35; }
+    .path { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-family:Consolas,Monaco,monospace; }
+    .error { display:none; margin:14px; padding:10px 12px; border:1px solid #f0b6b6; border-radius:6px; background:#fff4f4; color:#9b2525; font-size:13px; }
+    .error.visible { display:block; }
+    @media (max-width:1100px) { header { align-items:flex-start; flex-direction:column; } .toolbar { width:100%; justify-content:flex-start; } .main { height:auto; grid-template-columns:1fr; } .pane { min-height:72vh; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>2K 小球分割结果查看器</h1>
+  <div class="toolbar">
+    <label>样本 <select id="sampleSelect"></select></label>
+    <button id="zoomOut" type="button">-</button>
+    <button id="zoomReset" type="button">100%</button>
+    <button id="zoomIn" type="button">+</button>
+  </div>
+</header>
+<main class="main">
+  <section class="pane"><div class="pane-head"><div class="pane-title" id="originalTitle">BMP 原图</div><div class="badge">Original</div></div><div class="image-wrap"><div class="image-stage"><img id="originalImage" class="sync-source" src="" alt="原图"><span class="sync-dot" data-dot="original"></span><div class="error" id="originalError">原图加载失败</div></div></div><div class="info"><div class="path" id="originalPath"></div></div></section>
+  <section class="pane"><div class="pane-head"><div class="pane-title" id="samTitle">SAM split9 upscale 初始结果</div><div class="badge">SAM</div></div><div class="image-wrap"><div class="image-stage"><img id="samImage" class="sync-source" src="" alt="SAM overlay"><span class="sync-dot" data-dot="sam"></span><div class="error" id="samError">SAM overlay 加载失败</div></div></div><div class="info"><div class="path" id="samPath"></div></div></section>
+  <section class="pane"><div class="pane-head"><div class="pane-title" id="finalTitle">CNN v4.1 scale-aware t0.75 overlay</div><div class="badge">V4.1</div></div><div class="image-wrap"><div class="image-stage"><img id="finalImage" class="sync-source" src="" alt="v4.1 overlay"><span class="sync-dot" data-dot="final"></span><div class="error" id="finalError">v4.1 overlay 加载失败</div></div></div><div class="info"><div id="sampleStats"></div><div class="path" id="finalPath"></div></div></section>
+</main>
+<script>
+const samples = [
+  {
+    "id": "1",
+    "label": "2K 样本 1",
+    "original": "../demo/小球2K放大倍数/1.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/1/sam_split9_upscale/1_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/1/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "3602",
+    "kept": "2720",
+    "rejected": "882",
+    "image_area": "1313280",
+    "ball_union_area": "451322",
+    "ball_union_area_percent": "34.366",
+    "sum_kept_mask_area": "520062",
+    "sum_kept_mask_area_percent": "39.600",
+    "equivalent_ball_count": "2932",
+    "real_ball": "2199",
+    "shadow_ball": "309",
+    "double_ball_cluster": "125",
+    "shadow_double_ball_cluster": "87"
+  },
+  {
+    "id": "2",
+    "label": "2K 样本 2",
+    "original": "../demo/小球2K放大倍数/2.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/2/sam_split9_upscale/2_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/2/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "3620",
+    "kept": "2913",
+    "rejected": "707",
+    "image_area": "1313280",
+    "ball_union_area": "474349",
+    "ball_union_area_percent": "36.119",
+    "sum_kept_mask_area": "550673",
+    "sum_kept_mask_area_percent": "41.931",
+    "equivalent_ball_count": "3139",
+    "real_ball": "2445",
+    "shadow_ball": "242",
+    "double_ball_cluster": "172",
+    "shadow_double_ball_cluster": "54"
+  },
+  {
+    "id": "3",
+    "label": "2K 样本 3",
+    "original": "../demo/小球2K放大倍数/3.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/3/sam_split9_upscale/3_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/3/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "3259",
+    "kept": "2453",
+    "rejected": "806",
+    "image_area": "1313280",
+    "ball_union_area": "403128",
+    "ball_union_area_percent": "30.696",
+    "sum_kept_mask_area": "474232",
+    "sum_kept_mask_area_percent": "36.111",
+    "equivalent_ball_count": "2662",
+    "real_ball": "2051",
+    "shadow_ball": "193",
+    "double_ball_cluster": "171",
+    "shadow_double_ball_cluster": "38"
+  },
+  {
+    "id": "4",
+    "label": "2K 样本 4",
+    "original": "../demo/小球2K放大倍数/4.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/4/sam_split9_upscale/4_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/4/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "2959",
+    "kept": "2124",
+    "rejected": "835",
+    "image_area": "1313280",
+    "ball_union_area": "348793",
+    "ball_union_area_percent": "26.559",
+    "sum_kept_mask_area": "416104",
+    "sum_kept_mask_area_percent": "31.684",
+    "equivalent_ball_count": "2318",
+    "real_ball": "1750",
+    "shadow_ball": "180",
+    "double_ball_cluster": "157",
+    "shadow_double_ball_cluster": "37"
+  },
+  {
+    "id": "5",
+    "label": "2K 样本 5",
+    "original": "../demo/小球2K放大倍数/5.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/5/sam_split9_upscale/5_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/5/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "2635",
+    "kept": "1593",
+    "rejected": "1042",
+    "image_area": "1313280",
+    "ball_union_area": "265273",
+    "ball_union_area_percent": "20.199",
+    "sum_kept_mask_area": "321989",
+    "sum_kept_mask_area_percent": "24.518",
+    "equivalent_ball_count": "1754",
+    "real_ball": "1291",
+    "shadow_ball": "141",
+    "double_ball_cluster": "144",
+    "shadow_double_ball_cluster": "17"
+  },
+  {
+    "id": "6",
+    "label": "2K 样本 6",
+    "original": "../demo/小球2K放大倍数/6.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/6/sam_split9_upscale/6_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/6/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "2541",
+    "kept": "1565",
+    "rejected": "976",
+    "image_area": "1313280",
+    "ball_union_area": "261576",
+    "ball_union_area_percent": "19.918",
+    "sum_kept_mask_area": "319221",
+    "sum_kept_mask_area_percent": "24.307",
+    "equivalent_ball_count": "1728",
+    "real_ball": "1257",
+    "shadow_ball": "145",
+    "double_ball_cluster": "135",
+    "shadow_double_ball_cluster": "28"
+  },
+  {
+    "id": "7",
+    "label": "2K 样本 7",
+    "original": "../demo/小球2K放大倍数/7.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/7/sam_split9_upscale/7_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/7/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "951",
+    "kept": "364",
+    "rejected": "587",
+    "image_area": "1313280",
+    "ball_union_area": "68739",
+    "ball_union_area_percent": "5.234",
+    "sum_kept_mask_area": "77388",
+    "sum_kept_mask_area_percent": "5.893",
+    "equivalent_ball_count": "387",
+    "real_ball": "291",
+    "shadow_ball": "50",
+    "double_ball_cluster": "21",
+    "shadow_double_ball_cluster": "2"
+  },
+  {
+    "id": "8",
+    "label": "2K 样本 8",
+    "original": "../demo/小球2K放大倍数/8.bmp",
+    "sam": "../demo/小球2K放大倍数_split9_upscale_cnn_v3_t075_mincrop256/8/sam_split9_upscale/8_sam_auto_overlay.png",
+    "final": "../demo/小球2K放大倍数_split9_upscale_cnn_v41_scale_t075/8/cnn_v41_scale_t075/cnn_filtered_class_overlay.png",
+    "predictions": "1369",
+    "kept": "498",
+    "rejected": "871",
+    "image_area": "1313280",
+    "ball_union_area": "87827",
+    "ball_union_area_percent": "6.688",
+    "sum_kept_mask_area": "113348",
+    "sum_kept_mask_area_percent": "8.631",
+    "equivalent_ball_count": "573",
+    "real_ball": "345",
+    "shadow_ball": "78",
+    "double_ball_cluster": "53",
+    "shadow_double_ball_cluster": "22"
+  }
+];
+const state = { sample:samples[0], zoom:1 };
+const imageIds = ['original','sam','final'];
+function $(id){ return document.getElementById(id); }
+function init(){
+  const sel=$('sampleSelect');
+  for(const s of samples){ const o=document.createElement('option'); o.value=s.id; o.textContent=s.label; sel.appendChild(o); }
+  sel.addEventListener('change',()=>{ state.sample=samples.find(x=>x.id===sel.value)||samples[0]; render(); });
+  $('zoomOut').onclick=()=>setZoom(state.zoom/1.25); $('zoomIn').onclick=()=>setZoom(state.zoom*1.25); $('zoomReset').onclick=()=>setZoom(1);
+  for(const id of imageIds){ const img=$(id+'Image'); img.addEventListener('mousemove', e=>syncMove(e,img)); img.addEventListener('mouseleave', hideDots); img.onerror=()=>$(id+'Error').classList.add('visible'); img.onload=()=>$(id+'Error').classList.remove('visible'); }
+  render(); setZoom(1);
+}
+function render(){
+  const s=state.sample;
+  $('originalTitle').textContent=`BMP 原图 - ${s.label}`; $('samTitle').textContent=`SAM split9 upscale - ${s.label}`; $('finalTitle').textContent=`CNN v4.1 t0.75 - ${s.label}`;
+  setImage('original', s.original); setImage('sam', s.sam); setImage('final', s.final);
+  $('sampleStats').textContent=`SAM masks: ${s.predictions || '-'} / kept: ${s.kept || '-'} / balls: ${s.equivalent_ball_count || '-'} / area: ${s.ball_union_area || '-'} px (${s.ball_union_area_percent || '-'}%)`;
+}
+function setImage(id, src){ $(id+'Image').src=src; $(id+'Path').textContent=src; $(id+'Error').classList.remove('visible'); }
+function setZoom(z){ state.zoom=Math.max(.5,Math.min(8,z)); document.documentElement.style.setProperty('--img-width', `${Math.round(state.zoom*100)}%`); $('zoomReset').textContent=`${Math.round(state.zoom*100)}%`; }
+function syncMove(e, sourceImg){
+  const rect=sourceImg.getBoundingClientRect(); const rx=(e.clientX-rect.left)/rect.width; const ry=(e.clientY-rect.top)/rect.height;
+  if(rx<0||ry<0||rx>1||ry>1){ hideDots(); return; }
+  for(const id of imageIds){ const img=$(id+'Image'); const dot=document.querySelector(`[data-dot="${id}"]`); if(!img || !dot || !img.complete) continue; dot.style.left=`${img.offsetLeft + rx*img.clientWidth}px`; dot.style.top=`${img.offsetTop + ry*img.clientHeight}px`; dot.classList.add('visible'); }
+}
+function hideDots(){ document.querySelectorAll('.sync-dot').forEach(x=>x.classList.remove('visible')); }
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2K 小球六类标注助手</title>
+  <style>
+    :root { --bg:#f5f7fb; --panel:#fff; --border:#d8dfeb; --text:#172033; --muted:#63708a; --blue:#1769e0; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Arial,"Microsoft YaHei",sans-serif; }
+    header { height:58px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 14px; background:#fff; border-bottom:1px solid var(--border); }
+    h1 { margin:0; font-size:17px; }
+    .toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    button, select, input { height:34px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); font:inherit; font-size:13px; padding:0 10px; }
+    button { cursor:pointer; }
+    button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+    main { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(420px,.65fr); gap:12px; height:calc(100vh - 58px); padding:12px; }
+    .panel { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--border); border-radius:8px; background:var(--panel); }
+    .panel-head { min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 12px; border-bottom:1px solid var(--border); }
+    .title { font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .badge { color:var(--blue); background:#e8f1ff; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:700; }
+    .image-wrap { flex:1; min-height:0; overflow:auto; background:repeating-conic-gradient(#eef2f8 0% 25%,#fff 0% 50%) 50%/24px 24px; }
+    .image-stage { position:relative; width:max-content; min-width:100%; min-height:100%; padding:14px; }
+    #originalImage { display:block; width:var(--img-width,100%); max-width:none; border:1px solid rgba(0,0,0,.2); }
+    .bbox { position:absolute; border:1px dashed rgba(210,20,20,.78); pointer-events:none; box-shadow:0 0 0 1px rgba(255,255,255,.72); }
+    .bbox::after { content:attr(data-label); position:absolute; left:0; top:-18px; padding:1px 5px; background:rgba(210,20,20,.78); color:#fff; font-size:11px; line-height:14px; white-space:nowrap; }
+    .side { display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:10px; padding:12px; overflow:hidden; }
+    .crop-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .crop-box { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#f7f9fd; }
+    .crop-box h3 { margin:0; padding:8px 9px; font-size:13px; border-bottom:1px solid var(--border); }
+    canvas { display:block; width:100%; image-rendering:pixelated; background:#fff; }
+    .labels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .labels button { height:38px; font-weight:700; }
+    .labels button.active { outline:2px solid var(--blue); background:#e8f1ff; }
+    .meta { display:grid; grid-template-columns:140px 1fr; gap:6px 8px; align-content:start; min-height:0; overflow:auto; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px; }
+    .meta .k { color:var(--muted); }
+    .meta .v { font-family:Consolas,Monaco,monospace; overflow-wrap:anywhere; }
+    .note { width:100%; height:34px; }
+    .status { color:var(--muted); font-size:13px; margin-top:6px; }
+    .zoom-tools { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+    .zoom-tools button { width:32px; padding:0; font-weight:700; }
+    .zoom-value { min-width:52px; color:var(--muted); font-size:12px; text-align:center; }
+    @media (max-width:1100px){ main{grid-template-columns:1fr;height:auto}.panel{min-height:70vh} }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>2K 小球六类标注助手</h1>
+    <div class="toolbar">
+      <button id="prevBtn">上一条 A</button>
+      <button id="nextBtn">下一条 D</button>
+      <select id="sampleSelect"><option value="all">全部样本</option></select>
+      <select id="predSelect"><option value="all">全部预测类</option></select>
+      <input id="jumpInput" type="number" min="1" placeholder="序号" style="width:80px">
+      <button id="jumpBtn">跳转</button>
+      <button id="downloadBtn" class="primary">下载CSV</button>
+    </div>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="panel-head">
+        <div class="title" id="imageTitle">候选 bbox 定位</div>
+        <div class="zoom-tools">
+          <button id="zoomOutBtn" type="button">-</button>
+          <button id="zoomResetBtn" type="button">1:1</button>
+          <button id="zoomInBtn" type="button">+</button>
+          <span class="zoom-value" id="zoomValue">100%</span>
+          <label class="toggle-label"><input id="bboxToggle" type="checkbox" checked>bbox</label>
+        </div>
+        <div class="badge" id="progressBadge">0 / 0</div>
+      </div>
+      <div class="image-wrap" id="imageWrap">
+        <div class="image-stage" id="imageStage">
+          <img id="originalImage" alt="2K 原图">
+          <div class="bbox" id="bbox"></div>
+        </div>
+      </div>
+    </section>
+    <aside class="panel side">
+      <div class="crop-row">
+        <div class="crop-box"><h3>原图局部（原图坐标）</h3><canvas id="cropCanvas" width="192" height="192"></canvas></div>
+        <div class="crop-box"><h3>mask 局部（与原图同窗口）</h3><canvas id="maskCanvas" width="192" height="192"></canvas></div>
+      </div>
+      <div class="labels" id="labelButtons"></div>
+      <div class="meta" id="meta"></div>
+      <div>
+        <input class="note" id="noteInput" placeholder="备注，可选">
+        <div class="status" id="statusText"></div>
+      </div>
+    </aside>
+  </main>
+
+<script>
+const labels = [
+  {key:"real_ball", text:"1 真实单球"},
+  {key:"shadow_ball", text:"2 阴影单球"},
+  {key:"double_ball_cluster", text:"3 双球团"},
+  {key:"shadow_double_ball_cluster", text:"4 阴影双球团"},
+  {key:"single_ball_background_mixed", text:"5 单球背景混合"},
+  {key:"interference", text:"6 干扰物"},
+];
+const state = { data:null, candidates:[], filtered:[], index:0, labels:{}, notes:{}, zoom:1, currentImageUrl:"", renderToken:0, showBbox:true };
+const storageKey = "ball2k_six_class_labels_v1";
+function loadLocal(){ try{ const raw=localStorage.getItem(storageKey); if(raw){ const s=JSON.parse(raw); state.labels=s.labels||{}; state.notes=s.notes||{}; if(typeof s.showBbox === 'boolean') state.showBbox=s.showBbox; }}catch(_){} }
+function saveLocal(){ localStorage.setItem(storageKey, JSON.stringify({labels:state.labels, notes:state.notes, showBbox:state.showBbox})); }
+function current(){ return state.filtered[state.index]; }
+function escCsv(v){ const s=String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s; }
+async function init(){
+  loadLocal();
+  const res = await fetch("annotation_data/ball2k_six_class_candidates.json?v=10", {cache:"no-store"});
+  state.data = await res.json();
+  const fresh = state.data.candidates || [];
+  const legacy = (state.data.legacy_candidates || []).filter(c => state.labels[c.candidate_id]);
+  const freshIds = new Set(fresh.map(c => String(c.candidate_id)));
+  const preservedLegacy = legacy.filter(c => !freshIds.has(String(c.candidate_id)));
+  state.candidates = preservedLegacy.concat(fresh);
+  state.preservedLegacyCount = preservedLegacy.length;
+  buildSelects(); buildLabelButtons(); bindEvents(); applyFilter(); setZoom(1);
+}
+function buildSelects(){
+  const samples=[...new Set(state.candidates.map(x=>x.sample))].sort((a,b)=>Number(a)-Number(b));
+  const ss=document.getElementById('sampleSelect');
+  for(const s of samples){ const o=document.createElement('option'); o.value=s; o.textContent=`样本 ${s}`; ss.appendChild(o); }
+  const ps=document.getElementById('predSelect');
+  for(const l of labels){ const o=document.createElement('option'); o.value=l.key; o.textContent=`预测 ${l.text.replace(/^\d\s*/, '')}`; ps.appendChild(o); }
+}
+function buildLabelButtons(){
+  const box=document.getElementById('labelButtons');
+  for(const item of labels){ const b=document.createElement('button'); b.type='button'; b.dataset.label=item.key; b.textContent=item.text; b.addEventListener('click',()=>setLabel(item.key)); box.appendChild(b); }
+}
+function bindEvents(){
+  document.getElementById('prevBtn').onclick=()=>move(-1); document.getElementById('nextBtn').onclick=()=>move(1);
+  document.getElementById('jumpBtn').onclick=jump; document.getElementById('downloadBtn').onclick=downloadCsv;
+  document.getElementById('sampleSelect').onchange=applyFilter; document.getElementById('predSelect').onchange=applyFilter;
+  document.getElementById('zoomOutBtn').onclick=()=>setZoom(state.zoom/1.25); document.getElementById('zoomInBtn').onclick=()=>setZoom(state.zoom*1.25); document.getElementById('zoomResetBtn').onclick=()=>setZoom(1);
+  document.getElementById('bboxToggle').addEventListener('change', (e)=>setBboxVisible(e.target.checked));
+  document.getElementById('noteInput').addEventListener('input',()=>{ const c=current(); if(!c) return; state.notes[c.candidate_id]=document.getElementById('noteInput').value; saveLocal(); });
+  document.addEventListener('keydown',(e)=>{ if(e.target && ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return; if(e.key==='a'||e.key==='ArrowLeft') move(-1); if(e.key==='d'||e.key==='ArrowRight') move(1); if(e.key==='+'||e.key==='=') setZoom(state.zoom*1.25); if(e.key==='-'||e.key==='_') setZoom(state.zoom/1.25); if(e.key==='0') setZoom(1); for(let i=0;i<labels.length;i++) if(e.key===String(i+1)) setLabel(labels[i].key); });
+}
+function setBboxVisible(visible){
+  state.showBbox=Boolean(visible);
+  document.getElementById('bbox').style.display=state.showBbox?'block':'none';
+  saveLocal();
+}
+function applyFilter(){
+  const s=document.getElementById('sampleSelect').value; const p=document.getElementById('predSelect').value;
+  state.filtered=state.candidates.filter(x=>(s==='all'||x.sample===s) && (p==='all'||x.pred_label===p)); state.index=0; render();
+}
+function move(d){ if(!state.filtered.length) return; state.index=Math.max(0, Math.min(state.filtered.length-1, state.index+d)); render(); }
+function jump(){ const n=parseInt(document.getElementById('jumpInput').value,10); if(Number.isFinite(n)){ state.index=Math.max(0,Math.min(state.filtered.length-1,n-1)); render(); }}
+function setLabel(label){ const c=current(); if(!c) return; state.labels[c.candidate_id]=label; saveLocal(); renderLabelState(); move(1); }
+function setZoom(z){ state.zoom=Math.max(.5,Math.min(8,z)); const img=document.getElementById('originalImage'); const iw=img.naturalWidth||1280; img.style.setProperty('--img-width', `${Math.round(iw*state.zoom)}px`); document.getElementById('zoomValue').textContent=`${Math.round(state.zoom*100)}%`; requestAnimationFrame(()=>{ const c=current(); if(c){ placeBbox(c); centerBbox(c); }}); }
+function render(){
+  const c=current(); if(!c){ document.getElementById('progressBadge').textContent='0 / 0'; return; }
+  const img=document.getElementById('originalImage');
+  if(state.currentImageUrl!==c.image_url){
+    state.currentImageUrl=c.image_url;
+    const expectedId=c.candidate_id;
+    img.onload=()=>{
+      const latest=current();
+      if(!latest || latest.candidate_id!==expectedId || latest.image_url!==state.currentImageUrl) return;
+      setZoom(state.zoom);
+      placeBbox(latest);
+      centerBbox(latest);
+    };
+    img.src=c.image_url;
+  }
+  document.getElementById('progressBadge').textContent=`${state.index+1} / ${state.filtered.length}`;
+  document.getElementById('imageTitle').textContent=`样本 ${c.sample} candidate=${c.candidate_id} ${c.tile_id}/mask_${String(c.mask_index).padStart(4,'0')} pred=${c.pred_label} p=${Number(c.keep_probability).toFixed(3)}`;
+  document.getElementById('noteInput').value=state.notes[c.candidate_id]||'';
+  document.getElementById('bboxToggle').checked=state.showBbox;
+  renderMeta(c); placeBbox(c); renderCrops(c); renderLabelState(); centerBbox(c); updateStatus();
+}
+function placeBbox(c){
+  const img=document.getElementById('originalImage'); const box=document.getElementById('bbox');
+  box.style.display=state.showBbox?'block':'none';
+  const [x0,y0,x1,y1]=c.bbox_xyxy.map(Number); const sx=img.clientWidth/(img.naturalWidth||1280); const sy=img.clientHeight/(img.naturalHeight||1026);
+  const gap=1; box.style.left=`${img.offsetLeft+x0*sx-gap}px`; box.style.top=`${img.offsetTop+y0*sy-gap}px`; box.style.width=`${Math.max(2,(x1-x0)*sx+2*gap)}px`; box.style.height=`${Math.max(2,(y1-y0)*sy+2*gap)}px`; box.dataset.label=`${c.sample}:${c.candidate_id}`;
+}
+function centerBbox(c){ const wrap=document.getElementById('imageWrap'); const img=document.getElementById('originalImage'); if(!img.clientWidth) return; const [x0,y0,x1,y1]=c.bbox_xyxy.map(Number); const sx=img.clientWidth/(img.naturalWidth||1280); const sy=img.clientHeight/(img.naturalHeight||1026); const cx=img.offsetLeft+(x0+x1)*.5*sx; const cy=img.offsetTop+(y0+y1)*.5*sy; wrap.scrollLeft=Math.max(0,cx-wrap.clientWidth/2); wrap.scrollTop=Math.max(0,cy-wrap.clientHeight/2); }
+const imageCache = new Map();
+function loadImage(src){
+  if(imageCache.has(src)) return imageCache.get(src);
+  const p=new Promise((resolve,reject)=>{ const im=new Image(); im.onload=()=>resolve(im); im.onerror=reject; im.src=src; });
+  imageCache.set(src,p);
+  return p;
+}
+function drawMessage(canvas, text){
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#f7f9fd'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#63708a'; ctx.font='13px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text, canvas.width/2, canvas.height/2);
+}
+function cropFrame(box, imageWidth, imageHeight){
+  const [x0,y0,x1,y1]=box.map(Number);
+  const pad=Math.max(8, Math.round(Math.max(x1-x0, y1-y0)*2.2));
+  const sx=Math.max(0, x0-pad), sy=Math.max(0, y0-pad);
+  const ex=Math.min(imageWidth, x1+pad), ey=Math.min(imageHeight, y1+pad);
+  return {sx, sy, sw:Math.max(1, ex-sx), sh:Math.max(1, ey-sy)};
+}
+function drawFrame(canvas, img, frame, box, mode){
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle=mode==='mask'?'#111':'#fff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img, frame.sx, frame.sy, frame.sw, frame.sh, 0, 0, canvas.width, canvas.height);
+  if(mode==='mask' || !box) return;
+  const [x0,y0,x1,y1]=box.map(Number);
+  ctx.strokeStyle='#ff2020';
+  ctx.lineWidth=3;
+  ctx.strokeRect((x0-frame.sx)/frame.sw*canvas.width, (y0-frame.sy)/frame.sh*canvas.height, (x1-x0)/frame.sw*canvas.width, (y1-y0)/frame.sh*canvas.height);
+}
+function drawClippedFrame(canvas, img, frame){
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle='#111';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  const ix0=Math.max(0, frame.sx);
+  const iy0=Math.max(0, frame.sy);
+  const ix1=Math.min(img.naturalWidth || img.width, frame.sx+frame.sw);
+  const iy1=Math.min(img.naturalHeight || img.height, frame.sy+frame.sh);
+  if(ix1<=ix0 || iy1<=iy0) return;
+  const dx=(ix0-frame.sx)/frame.sw*canvas.width;
+  const dy=(iy0-frame.sy)/frame.sh*canvas.height;
+  const dw=(ix1-ix0)/frame.sw*canvas.width;
+  const dh=(iy1-iy0)/frame.sh*canvas.height;
+  ctx.drawImage(img, ix0, iy0, ix1-ix0, iy1-iy0, dx, dy, dw, dh);
+}
+function renderCrops(c){
+  const token=++state.renderToken;
+  const cropCanvas=document.getElementById('cropCanvas');
+  const maskCanvas=document.getElementById('maskCanvas');
+  drawMessage(cropCanvas, '原图加载中');
+  drawMessage(maskCanvas, 'mask 加载中');
+  Promise.all([loadImage(c.image_url), loadImage(c.mask_file_url || c.upscaled_mask_file_url)]).then(([img, maskImg])=>{
+    if(token!==state.renderToken || !current() || current().candidate_id!==c.candidate_id) return;
+    const frame=cropFrame(c.bbox_xyxy, img.naturalWidth || img.width, img.naturalHeight || img.height);
+    drawFrame(cropCanvas, img, frame, c.bbox_xyxy, 'crop');
+    const tileBox=(c.tile_box_xyxy||[0,0,0,0]).map(Number);
+    const localFrame={sx:frame.sx-tileBox[0], sy:frame.sy-tileBox[1], sw:frame.sw, sh:frame.sh};
+    drawClippedFrame(maskCanvas, maskImg, localFrame);
+  }).catch(()=>{
+    drawMessage(cropCanvas, '局部加载失败');
+    drawMessage(maskCanvas, 'mask 加载失败');
+  });
+}
+function renderMeta(c){
+  const rows=[['candidate_id',c.candidate_id],['sample',c.sample],['pred_label',c.pred_label],['keep_probability',Number(c.keep_probability).toFixed(4)],['pred_confidence',Number(c.pred_confidence).toFixed(4)],['area',c.area],['area_ratio',c.area_ratio],['bbox_global',JSON.stringify(c.bbox_xyxy)],['bbox_w/h',`${c.bbox_w}/${c.bbox_h}`],['mask_bbox_local',JSON.stringify(c.mask_bbox_xyxy||[])],['upscaled_bbox_sam_input',JSON.stringify(c.upscaled_bbox_xyxy||[])],['tile_box',JSON.stringify(c.tile_box_xyxy||[])],['tile/mask',`${c.tile_id}/${c.mask_index}`],['selection_rule',c.selection_rule]];
+  for(const l of labels){ const k='prob_'+l.key; if(c[k]!==undefined) rows.push([k, Number(c[k]).toFixed(4)]); }
+  document.getElementById('meta').innerHTML=rows.map(([k,v])=>`<div class="k">${k}</div><div class="v">${v ?? ''}</div>`).join('');
+}
+function renderLabelState(){ const c=current(); const cur=c?state.labels[c.candidate_id]:null; document.querySelectorAll('#labelButtons button').forEach(b=>b.classList.toggle('active', b.dataset.label===cur)); }
+function updateStatus(){ const done=Object.keys(state.labels).length; const preserved=state.preservedLegacyCount||0; document.getElementById('statusText').textContent=`已标注 ${done} / ${state.candidates.length}。已保留旧标注候选 ${preserved} 个；快捷键：1-6 标注，A/D 切换。`; }
+function downloadCsv(){
+  const rows=[['candidate_id','sample','tile_id','mask_index','label','note','pred_label','keep_probability','area','bbox_xyxy']];
+  for(const c of state.candidates){ rows.push([c.candidate_id,c.sample,c.tile_id,c.mask_index,state.labels[c.candidate_id]||'',state.notes[c.candidate_id]||'',c.pred_label,c.keep_probability,c.area,JSON.stringify(c.bbox_xyxy)]); }
+  const csv=rows.map(r=>r.map(escCsv).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='ball2k_six_class_manual_labels.csv'; a.click(); URL.revokeObjectURL(a.href); saveLocal();
+}
+init();
+</script>
+</body>
+</html>

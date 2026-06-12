@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>a8638 小球分割结果查看器</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-border: #d9e0ec;
+      --text: #18202f;
+      --muted: #657086;
+      --accent: #1769e0;
+      --accent-soft: #e8f1ff;
+      --shadow: 0 8px 22px rgba(24, 32, 47, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      height: 64px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--panel-border);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .toolbar label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    select,
+    button {
+      height: 34px;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+    }
+
+    select {
+      min-width: 280px;
+      padding: 0 34px 0 10px;
+    }
+
+    button {
+      min-width: 38px;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+
+    button:hover,
+    select:hover {
+      border-color: #8fb6ee;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      height: calc(100vh - 64px);
+      padding: 12px;
+    }
+
+    .pane {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .pane-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 48px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+
+    .pane-title {
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+
+    .image-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      background:
+        linear-gradient(45deg, #f0f3f8 25%, transparent 25%),
+        linear-gradient(-45deg, #f0f3f8 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f0f3f8 75%),
+        linear-gradient(-45deg, transparent 75%, #f0f3f8 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+
+    .image-stage {
+      position: relative;
+      display: grid;
+      min-width: 100%;
+      min-height: 100%;
+      align-items: start;
+      justify-items: center;
+      padding: 14px;
+    }
+
+    .image-stage img {
+      display: block;
+      width: var(--img-width, 100%);
+      max-width: none;
+      height: auto;
+      border: 1px solid rgba(24, 32, 47, 0.18);
+      background: #fff;
+    }
+
+    .sync-dot {
+      position: absolute;
+      z-index: 3;
+      width: 7px;
+      height: 7px;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 999px;
+      background: rgba(220, 24, 24, 0.72);
+      box-shadow: 0 0 0 1px rgba(220, 24, 24, 0.3);
+      opacity: 0;
+    }
+
+    .sync-dot.visible {
+      opacity: 0.82;
+    }
+
+    .sync-source {
+      cursor: crosshair;
+    }
+
+    .info {
+      display: grid;
+      gap: 6px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--panel-border);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 13px;
+      height: 13px;
+      flex: 0 0 auto;
+      border-radius: 3px;
+      border: 1px solid rgba(0, 0, 0, 0.18);
+      background: var(--swatch);
+    }
+
+    .path {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-family: Consolas, Monaco, monospace;
+    }
+
+    .image-error {
+      display: none;
+      margin: 14px;
+      padding: 10px 12px;
+      border: 1px solid #f0b6b6;
+      border-radius: 6px;
+      background: #fff4f4;
+      color: #9b2525;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .image-error.visible {
+      display: block;
+    }
+
+    @media (max-width: 1100px) {
+      header {
+        height: auto;
+        min-height: 64px;
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 12px;
+      }
+
+      .toolbar {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      select {
+        min-width: min(100%, 280px);
+      }
+
+
+      .main {
+        height: auto;
+        grid-template-columns: 1fr;
+      }
+
+      .pane {
+        min-height: 72vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>a8638 小球分割结果查看器</h1>
+    <div class="toolbar">
+      <label>
+        右栏阶段
+        <select id="stageSelect" aria-label="选择右栏过滤阶段图"></select>
+      </label>
+      <button id="zoomOut" type="button" title="缩小">-</button>
+      <button id="zoomReset" type="button" title="重置缩放">100%</button>
+      <button id="zoomIn" type="button" title="放大">+</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="pane">
+      <div class="pane-head">
+        <div class="pane-title">BMP 原图</div>
+        <div class="badge">Original</div>
+      </div>
+      <div class="image-wrap">
+        <div class="image-stage">
+          <img class="sync-source" data-sync-panel="original" src="../demo/a86387bac9e4ab20fe9391a400b9e219.bmp" alt="a8638 BMP 原图">
+          <span class="sync-dot" data-sync-dot="original" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="info">
+        <div class="path">demo/a86387bac9e4ab20fe9391a400b9e219.bmp</div>
+      </div>
+    </section>
+
+    <section class="pane">
+      <div class="pane-head">
+        <div class="pane-title">SAM split36 upscale 初始 overlay</div>
+        <div class="badge">SAM</div>
+      </div>
+      <div class="image-wrap">
+        <div class="image-stage">
+          <img class="sync-source" data-sync-panel="sam" src="../demo/a86387bac9e4ab20fe9391a400b9e219_sam_auto_split36_upscale/a86387bac9e4ab20fe9391a400b9e219_sam_auto_overlay.png" alt="SAM split36 初始 overlay">
+          <span class="sync-dot" data-sync-dot="sam" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="info">
+        <div class="path">demo/a86387..._sam_auto_split36_upscale/..._sam_auto_overlay.png</div>
+      </div>
+    </section>
+
+    <section class="pane">
+      <div class="pane-head">
+        <div class="pane-title" id="stageTitle">过滤阶段图</div>
+        <div class="badge" id="stageBadge">Stage</div>
+      </div>
+      <div class="image-wrap">
+        <div class="image-stage">
+          <img id="stageImage" class="sync-source" data-sync-panel="stage" src="" alt="过滤阶段图">
+          <span class="sync-dot" data-sync-dot="stage" aria-hidden="true"></span>
+          <div class="image-error" id="stageImageError">当前阶段图片加载失败，请确认对应输出文件是否存在。</div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script>
+    const stages = [
+      {
+        id: "01_cnn_v3_t055",
+        label: "01 [保留] CNN v3 upscale-only 阈值 0.55",
+        title: "01 [保留] CNN v3 upscale-only 阈值 0.55",
+        badge: "5216 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t055/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "02_cnn_v3_t065",
+        label: "02 [保留] CNN v3 upscale-only 阈值 0.65",
+        title: "02 [保留] CNN v3 upscale-only 阈值 0.65",
+        badge: "5073 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t065/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "03_cnn_v3_t075",
+        label: "03 [保留] CNN v3 upscale-only 阈值 0.75",
+        title: "03 [保留] CNN v3 upscale-only 阈值 0.75",
+        badge: "4877 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t075/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "04_cnn_v3_t085",
+        label: "04 [保留] CNN v3 upscale-only 阈值 0.85",
+        title: "04 [保留] CNN v3 upscale-only 阈值 0.85",
+        badge: "4532 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t085/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "05_cnn_v3_t090",
+        label: "05 [保留] CNN v3 upscale-only 阈值 0.90",
+        title: "05 [保留] CNN v3 upscale-only 阈值 0.90",
+        badge: "4262 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t090/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "06_cnn_v3_t095",
+        label: "06 [保留] CNN v3 upscale-only 阈值 0.95",
+        title: "06 [保留] CNN v3 upscale-only 阈值 0.95",
+        badge: "3766 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t095/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "07_cnn_v3_t097",
+        label: "07 [保留] CNN v3 upscale-only 阈值 0.97",
+        title: "07 [保留] CNN v3 upscale-only 阈值 0.97",
+        badge: "3348 kept",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t097/cnn_filtered_class_overlay.png"
+      },
+      {
+        id: "08_cnn_v3_reject_t095",
+        label: "08 [剔除] CNN v3 upscale-only 阈值 0.95",
+        title: "08 [剔除] CNN v3 upscale-only 阈值 0.95",
+        badge: "6873 rejected",
+        src: "../demo/a863_manual_cnn_apply_v3_upscaled_t095/cnn_rejected_overlay.png"
+      }
+    ];    const select = document.getElementById("stageSelect");
+    const stageImage = document.getElementById("stageImage");
+    const stageImageError = document.getElementById("stageImageError");
+    const stageTitle = document.getElementById("stageTitle");
+    const stageBadge = document.getElementById("stageBadge");
+    const root = document.documentElement;
+    let zoom = 100;
+
+    for (const stage of stages) {
+      const option = document.createElement("option");
+      option.value = stage.id;
+      option.textContent = stage.label;
+      select.appendChild(option);
+
+    }
+
+    function setStage(id) {
+      const stage = stages.find((item) => item.id === id) || stages[0];
+      select.value = stage.id;
+      stageImageError.classList.remove("visible");
+      stageImage.src = stage.src;
+      stageImage.alt = stage.title;
+      stageTitle.textContent = stage.title;
+      stageBadge.textContent = stage.badge;
+    }
+
+    function applyZoom() {
+      root.style.setProperty("--img-width", `${zoom}%`);
+      document.getElementById("zoomReset").textContent = `${zoom}%`;
+    }
+
+    function getSyncItems() {
+      return Array.from(document.querySelectorAll(".sync-source")).map((img) => ({
+        img,
+        panel: img.dataset.syncPanel,
+        dot: document.querySelector(`[data-sync-dot="${img.dataset.syncPanel}"]`),
+        wrap: img.closest(".image-wrap")
+      }));
+    }
+
+    function hideSyncDots() {
+      for (const item of getSyncItems()) {
+        item.dot.classList.remove("visible");
+      }
+    }
+
+    function placeSyncDot(item, nx, ny, visible) {
+      const left = item.img.offsetLeft + nx * item.img.clientWidth;
+      const top = item.img.offsetTop + ny * item.img.clientHeight;
+      item.dot.style.left = `${left}px`;
+      item.dot.style.top = `${top}px`;
+      item.dot.classList.toggle("visible", visible);
+    }
+
+    function centerSyncPoint(item, nx, ny) {
+      const targetX = item.img.offsetLeft + nx * item.img.clientWidth;
+      const targetY = item.img.offsetTop + ny * item.img.clientHeight;
+      item.wrap.scrollLeft = Math.max(0, targetX - item.wrap.clientWidth / 2);
+      item.wrap.scrollTop = Math.max(0, targetY - item.wrap.clientHeight / 2);
+    }
+
+    function handleSyncMove(event) {
+      const sourceImg = event.currentTarget;
+      const rect = sourceImg.getBoundingClientRect();
+      const nx = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+      const ny = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+
+      for (const item of getSyncItems()) {
+        const isTarget = item.img !== sourceImg;
+        placeSyncDot(item, nx, ny, isTarget);
+        if (isTarget) {
+          centerSyncPoint(item, nx, ny);
+        }
+      }
+    }
+
+    for (const img of document.querySelectorAll(".sync-source")) {
+      img.addEventListener("pointermove", handleSyncMove);
+      img.addEventListener("pointerleave", hideSyncDots);
+    }
+
+    stageImage.addEventListener("error", () => {
+      stageImageError.classList.add("visible");
+    });
+
+    stageImage.addEventListener("load", () => {
+      stageImageError.classList.remove("visible");
+    });
+
+    select.addEventListener("change", () => setStage(select.value));
+    document.getElementById("zoomOut").addEventListener("click", () => {
+      zoom = Math.max(35, zoom - 15);
+      applyZoom();
+    });
+    document.getElementById("zoomIn").addEventListener("click", () => {
+      zoom = Math.min(260, zoom + 15);
+      applyZoom();
+    });
+    document.getElementById("zoomReset").addEventListener("click", () => {
+      zoom = 100;
+      applyZoom();
+    });
+
+    select.value = "01_cnn_v3_t055";
+    setStage(select.value);
+    applyZoom();
+  </script>
+</body>
+</html>

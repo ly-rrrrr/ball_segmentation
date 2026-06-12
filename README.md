@@ -1,289 +1,50 @@
 # ball_segmentation
 
-`ball_segmentation` 是一个基于 Segment Anything Model（SAM）的球状目标/颗粒掩码分割项目。项目当前包含三条主要流程：
+基于 Segment Anything Model（SAM）的小球/颗粒候选分割与过滤项目。本仓库按方法演进保留从无训练规则到尺度感知 CNN 的完整技术路线，而不是只保留最终版本。
 
-1. 使用本地 Hugging Face SAM 模型对显微/膜面图像进行自动掩码生成。
-2. 根据参考图像的掩码面积分布，以及可选的圆度、长宽比、填充率、凸性等形状特征，对目标图像中的候选掩码进行二次筛选，并输出合并掩码和可视化叠加图。
-3. 基于图像处理的自适应球种子检测，对 SAM 掩码进行"必须有球种子支撑"的验证性过滤，解决面积/形状过滤在前景/背景特征重叠时失效的问题。
+## 方法索引
 
-项目适合用于对膜面图像中的球状颗粒、孔洞或相似小目标进行批量分割与筛选。当前仓库只提交代码、原始示例图和少量代表性分割结果图；完整的逐 mask PNG 与大体积 summary JSON 可按本文命令重新生成。
+| 方法 | 核心思想 | 需要训练 | 入口 | 状态 |
+|---|---|---:|---|---|
+| [01 SAM generation](methods/01_sam_generation/) | 切分、放大并生成候选掩膜 | 否 | `run_sam_automatic_mask.py` | 基础候选生成 |
+| [02 Area/shape](methods/02_area_shape_filter/) | 面积分布与几何特征过滤 | 否 | `filter_sam_masks_by_area.py` | 历史规则路线 |
+| [03 Seed heuristic](methods/03_seed_heuristic/) | 原图球心种子与 SAM 候选互证 | 否 | `filter_sam_masks_by_ball_seeds.py` | 历史启发式路线 |
+| [04 Learned seed](methods/04_learned_seed/) | 从干净参考图学习种子外观，再结合弧段/形状 | 参考样本拟合 | 两个 learned-seed 脚本 | 过渡路线 |
+| [05 CNN v3](methods/05_cnn_v3/) | 三通道候选 crop + 原型分类 | 是 | export/train/apply | 已保留 |
+| [06 CNN v4/v4.1](methods/06_cnn_v4_v41/) | 背景一致性与显式尺度特征 | 是 | export/train/apply | 当前完整学习路线 |
 
-## 项目结构
+详细演进与负面实验结论见 [docs/method_history.md](docs/method_history.md)。
 
-```text
-ball_segmentation/
-├── demo/
-│   ├── *.bmp
-│   ├── *_sam_auto_split36_upscale/
-│   │   ├── *_sam_auto_union.png
-│   │   └── *_sam_auto_overlay.png
-│   └── *_area_filtered_from_858_split36/
-│       ├── *_area_filtered_union.png
-│       └── *_area_filtered_overlay.png
-├── *_ball_seed_filter_p965/
-│   ├── ball_seed_map.png
-│   ├── ball_seed_overlay.png
-│   ├── filtered_union.png
-│   └── filtered_overlay.png
-└── tools/
-    ├── run_sam_automatic_mask.py
-    ├── filter_sam_masks_by_area.py
-    └── filter_sam_masks_by_ball_seeds.py
-```
-
-## 环境依赖
-
-建议使用 Python 3.10+，并准备一个本地 SAM 模型目录。脚本直接从本地目录加载 Hugging Face 模型，不会在命令中指定在线下载。
-
-主要 Python 依赖：
-
-```bash
-pip install numpy pillow torch transformers
-```
-
-如果使用 GPU，请确保 PyTorch 与本机 CUDA 版本匹配。
-
-## 1. 运行 SAM 自动分割
-
-入口脚本：
-
-```bash
-python tools/run_sam_automatic_mask.py --help
-```
-
-基本命令：
-
-```bash
-python tools/run_sam_automatic_mask.py \
-  --model-path /path/to/local/sam-model \
-  --image demo/858f3853776825b04e3608e2442d904a.bmp \
-  --output-dir demo/858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale \
-  --split 36 \
-  --split-upscale \
-  --save-individual-masks \
-  --save-upscaled-masks \
-  --union-max-area-ratio 0.9 \
-  --points-per-batch 256 \
-  --device 0
-```
-
-Windows PowerShell 示例：
-
-```powershell
-python tools/run_sam_automatic_mask.py `
-  --model-path D:\models\sam `
-  --image demo\858f3853776825b04e3608e2442d904a.bmp `
-  --output-dir demo\858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale `
-  --split 36 `
-  --split-upscale `
-  --save-individual-masks `
-  --save-upscaled-masks `
-  --union-max-area-ratio 0.9 `
-  --points-per-batch 256 `
-  --device 0
-```
-
-执行后的效果：
-
-- 将输入图像切成 `6 x 6` 共 36 个 tile。
-- 在 `--split-upscale` 模式下，每个 tile 会先放大到原图尺寸再送入 SAM，以增强小目标的自动分割能力。
-- 输出每个候选掩码的二值图、可选的 SAM 输入尺度掩码、合并后的 union 掩码、叠加可视化图和 JSON 统计文件。
-- 完整运行后，summary JSON 会记录 `split_tiles_upscale` 模式、tile 数量、候选掩码数量、每个掩码面积和输出路径。由于这类文件体积较大，仓库默认不提交完整 summary。
-
-常见输出文件：
+## 仓库内容
 
 ```text
-*_sam_auto_summary.json   # 分割统计、每个掩码面积、路径和 tile 信息，默认不提交
-*_sam_auto_union.png      # 合并后的二值掩码
-*_sam_auto_overlay.png    # 原图上的蓝色叠加可视化
-*_sam_auto_masks/         # 回贴到原图尺度的单个掩码，默认不提交
-*_sam_auto_upscaled_masks/# SAM 输入尺度的单个掩码，默认不提交
+methods/       六条方法路线的源码与说明
+annotation/    人工标签、标签绑定的候选元数据和静态查看器
+scripts/       串联多个方法的批处理脚本
+examples/      少量代表性输入与结果
+docs/          方法历史、资源清单和复现命令
 ```
 
-## 2. 按面积和形状筛选掩码
+完整原始数据、逐 mask 输出、训练数据集和模型权重不提交到 Git。公开 Google Drive 资源尚待上传，目标目录和状态记录在 [docs/resources.md](docs/resources.md)。
 
-入口脚本：
+## 安装
 
-```bash
-python tools/filter_sam_masks_by_area.py --help
-```
-
-基于参考图像面积分布筛选目标图像：
-
-```bash
-python tools/filter_sam_masks_by_area.py \
-  --reference-summary demo/858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale/858f3853776825b04e3608e2442d904a_sam_auto_summary.json \
-  --target-summary demo/a86387bac9e4ab20fe9391a400b9e219_sam_auto_split36_upscale/a86387bac9e4ab20fe9391a400b9e219_sam_auto_summary.json \
-  --output-dir demo/a86387bac9e4ab20fe9391a400b9e219_area_filtered_from_858_split36 \
-  --reference-min-area 50 \
-  --reference-max-quantile 0.9 \
-  --bin-width 100 \
-  --mode-window-ratio 0.75 \
-  --trim-std 2.5 \
-  --trim-iters 5 \
-  --num-std 2.0
-```
-
-Windows PowerShell 示例：
+建议使用 Python 3.10+。请按本机 CUDA 环境安装合适的 PyTorch，再安装项目：
 
 ```powershell
-python tools/filter_sam_masks_by_area.py `
-  --reference-summary demo\858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale\858f3853776825b04e3608e2442d904a_sam_auto_summary.json `
-  --target-summary demo\a86387bac9e4ab20fe9391a400b9e219_sam_auto_split36_upscale\a86387bac9e4ab20fe9391a400b9e219_sam_auto_summary.json `
-  --output-dir demo\a86387bac9e4ab20fe9391a400b9e219_area_filtered_from_858_split36 `
-  --reference-min-area 50 `
-  --reference-max-quantile 0.9 `
-  --bin-width 100 `
-  --mode-window-ratio 0.75 `
-  --trim-std 2.5 `
-  --trim-iters 5 `
-  --num-std 2.0
+python -m pip install -e .
 ```
 
-执行后的效果：
+## 快速查看
 
-- 从参考 summary 中收集候选掩码面积。
-- 可先按最小面积、最大分位数、主峰面积窗口和迭代高斯裁剪拟合主目标面积分布。
-- 根据 `mu ± num_std * sigma` 得到目标面积保留区间。
-- 对目标 summary 中的候选掩码逐个判断是否保留。
-- 输出新的 union 掩码、overlay 图和筛选 summary。
-- 执行完成后会生成 `*_area_filtered_overlay.png`、`*_area_filtered_union.png` 和 `*_area_filtered_summary.json`。仓库保留 overlay/union 作为代表性效果图，完整 summary 默认不提交。
+- 基础方法结果：[examples/basic](examples/basic/)
+- CNN v4.1 两个代表样本：[examples/cnn_v41/ball2k_result_viewer.html](examples/cnn_v41/ball2k_result_viewer.html)
+- 完整分阶段命令：[docs/reproduction.md](docs/reproduction.md)
 
-## 可选形状筛选
+## 标注注意事项
 
-`filter_sam_masks_by_area.py` 还支持形状约束：
+人工标签依赖生成时的候选 ID。重新运行 SAM 后，不得仅按行号或视觉位置复用旧标签；必须验证 `candidate_id`、`tile_id` 和 `mask_index` 等价。参见 [annotation/README.md](annotation/README.md)。
 
-```bash
-python tools/filter_sam_masks_by_area.py \
-  --target-summary demo/a86387bac9e4ab20fe9391a400b9e219_sam_auto_split36_upscale/a86387bac9e4ab20fe9391a400b9e219_sam_auto_summary.json \
-  --output-dir demo/a86387_shape_filtered \
-  --combine-mode shape \
-  --shape-filter ball \
-  --min-circularity 0.55 \
-  --max-aspect-ratio 1.6 \
-  --min-extent 0.45 \
-  --max-extent 0.95 \
-  --min-solidity 0.8 \
-  --min-circle-iou 0.5
-```
+## GitHub 同步
 
-常用参数含义：
-
-- `--combine-mode area|shape|and|or`：决定面积过滤和形状过滤如何组合。
-- `--shape-filter off|ball|ball_or_cluster`：关闭形状筛选、筛选单个球状目标，或允许球状簇。
-- `--shape-mask-source auto|mask_file|upscaled_mask_file`：选择用于计算形状特征的掩码来源。
-- `--reject-border-touching`：剔除接触图像边界的掩码。
-
-## 3. 基于球种子（Ball Seed）的掩码验证
-
-`filter_sam_masks_by_area.py` 的面积和形状过滤在以下情况会失效：噪声碎片与真实小球在面积分布和形状特征空间上高度重叠（尤其在 split36 下采样分辨率受限时），仅靠掩码几何无法可靠区分前景和背景。
-
-`filter_sam_masks_by_ball_seeds.py` 采用完全不同的策略：**独立于 SAM 从原图中检测"球种子"（ball seed），然后要求每个 SAM 掩码内部至少包含一个球种子才能保留**。这是一种"双重验证"（consensus）机制 — SAM 和图像处理检测器必须同时认为某位置是球，该掩码才被接受。
-
-### 球种子检测原理
-
-脚本使用纯图像处理方法（无需 ML 依赖，仅 stdlib + struct + zlib）在原图上滑动窗口扫描：
-
-1. **径向对比度响应**：对每个候选位置，计算中心区域与外围环形区域的平均灰度差 `response = |center_mean - outer_ring_mean|`。球状目标在 SEM 图像中表现为亮斑，其中心与周边的灰度对比度显著。
-2. **百分位阈值**：取响应值的前 `--seed-percentile`（默认 96.5%）作为候选。
-3. **非极大值抑制（NMS）**：在 `--seed-nms-radius` 范围内去重，确保每个球只有一个种子点。
-4. **径向平衡校验**：检查种子点四周的灰度是否均匀过渡，过滤掉边缘、纹理等假阳性。
-
-### 掩码过滤规则
-
-对每个 SAM 掩码，判断：
-
-- **种子命中**：掩码内部包含至少 `--min-seeds-in-mask`（默认 1）个球种子 → 保留。
-- **tile 边界邻近种子**：掩码触及 tile 边界（split36 碎片），且其全局包围盒附近有球种子 → 保留（避免错误丢弃跨 tile 边界的球碎片）。
-- **高 SAM 分保护**：SAM 评分 ≥ `--keep-high-score-no-seed`（默认 0.98）的掩码即使无种子也保留，防止过滤掉 SAM 高置信度的有效掩码。
-
-不满足以上任何条件的掩码被丢弃。
-
-### 基本命令
-
-```bash
-python tools/filter_sam_masks_by_ball_seeds.py \
-  --image demo/858f3853776825b04e3608e2442d904a.bmp \
-  --summary demo/858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale/858f3853776825b04e3608e2442d904a_sam_auto_summary.json \
-  --output-dir demo/858f_ball_seed_filter_p965
-```
-
-Windows PowerShell 示例：
-
-```powershell
-python tools/filter_sam_masks_by_ball_seeds.py `
-  --image demo\858f3853776825b04e3608e2442d904a.bmp `
-  --summary demo\858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale\858f3853776825b04e3608e2442d904a_sam_auto_summary.json `
-  --output-dir demo\858f_ball_seed_filter_p965
-```
-
-### 主要参数
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `--seed-radii` | `2,3,4,5,6` | 扫描的球半径范围（像素），逗号分隔 |
-| `--seed-stride` | `2` | 扫描窗口步长，越小越密集但越慢 |
-| `--seed-percentile` | `97.5` | 响应值百分位阈值，越高种子越少、越精 |
-| `--min-seed-response` | `4.0` | 响应值下限 |
-| `--seed-nms-radius` | `3` | NMS 抑制半径 |
-| `--radial-balance-max` | `2.5` | 径向平衡度上限，超过视为非球 |
-| `--min-seeds-in-mask` | `1` | 掩码内最少种子数 |
-| `--keep-high-score-no-seed` | `0.0` | 无种子但 SAM 分超过此值也保留（0=禁用） |
-
-### 输出文件
-
-```text
-*_ball_seed_filter_p965/
-├── ball_seed_map.png        # 球种子二值图
-├── ball_seed_overlay.png    # 球种子叠加在原图上的可视化（红点）
-├── filtered_union.png       # 过滤后的合并掩码
-├── filtered_overlay.png     # 过滤后的叠加可视化
-└── filtered_summary.json    # 过滤统计与每条掩码的判定记录
-```
-
-### 与面积/形状过滤的关系
-
-两种过滤策略可以串联使用：先用 `filter_sam_masks_by_area.py` 做面积/形状粗筛，再用 `filter_sam_masks_by_ball_seeds.py` 做球种子验证。两者互补 — 面积/形状过滤从"掩码像不像球"的角度筛选，球种子过滤从"原图中有没有球"的角度验证。
-
-## 本次整理与 GitHub 同步命令
-
-本地仓库初始化与提交：
-
-```bash
-git init
-git add README.md .gitignore tools \
-  demo/858f3853776825b04e3608e2442d904a.bmp \
-  demo/a86387bac9e4ab20fe9391a400b9e219.bmp \
-  demo/858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale/*_overlay.png \
-  demo/858f3853776825b04e3608e2442d904a_sam_auto_split36_upscale/*_union.png \
-  demo/a86387bac9e4ab20fe9391a400b9e219_sam_auto_split36_upscale/*_overlay.png \
-  demo/a86387bac9e4ab20fe9391a400b9e219_sam_auto_split36_upscale/*_union.png \
-  demo/a86387bac9e4ab20fe9391a400b9e219_area_filtered_from_858_split36/*_overlay.png \
-  demo/a86387bac9e4ab20fe9391a400b9e219_area_filtered_from_858_split36/*_union.png
-git commit -m "Initial ball segmentation project"
-```
-
-创建 GitHub 远程仓库并推送到账号 `ly-rrrrr` 下的同名仓库：
-
-```bash
-gh repo create ly-rrrrr/ball_segmentation --private --source . --remote origin --push
-```
-
-如果希望仓库公开，将 `--private` 改为 `--public`：
-
-```bash
-gh repo create ly-rrrrr/ball_segmentation --public --source . --remote origin --push
-```
-
-执行成功后的效果：
-
-- GitHub 上会出现新仓库 `ly-rrrrr/ball_segmentation`。
-- 本地 `origin` 远程地址会指向该仓库。
-- 当前目录中已提交的代码、原始示例图、代表性分割结果图和说明文档会同步到远程默认分支。
-- 后续修改可以使用 `git add`、`git commit`、`git push` 继续更新远程仓库。
-
-## 注意事项
-
-- `demo/` 本地可能包含大量 mask PNG 和较大的 JSON 统计文件；这些文件已在 `.gitignore` 中忽略，仓库只保留少量代表性结果图。
-- 单个文件目前未超过 GitHub 普通仓库 100 MB 的硬限制；如后续加入模型权重或更大的原始数据，建议使用 Git LFS 或不要直接提交权重文件。
-- `--model-path` 应指向本地 SAM 模型目录，模型权重不包含在当前项目中。
+当前远程仓库为 [ly-rrrrr/ball_segmentation](https://github.com/ly-rrrrr/ball_segmentation)。整理过程采用普通提交，不重写历史；本地大文件继续保留，但由 `.gitignore` 排除。

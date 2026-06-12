@@ -29,6 +29,9 @@ demo/*_dataset*/
 demo/*_model*/
 demo/*_apply*/
 
+# Curated copies of manual labels live under annotation/labels/.
+demo/*.csv
+
 # Large generated SAM artifacts are reproducible from the commands in README.
 demo/**/*_sam_auto_masks/
 demo/**/*_sam_auto_upscaled_masks/

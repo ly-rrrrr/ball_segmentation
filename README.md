@@ -25,7 +25,7 @@ examples/      少量代表性输入与结果
 docs/          方法历史、资源清单和复现命令
 ```
 
-完整原始数据、逐 mask 输出、训练数据集和模型权重不提交到 Git。公开 Google Drive 资源尚待上传，目标目录和状态记录在 [docs/resources.md](docs/resources.md)。
+完整原始数据、逐 mask 输出、训练数据集和模型权重不提交到 Git。SAM ViT-H 可从 Hugging Face 官方页面获取，CNN v3/v4.1 权重已通过 Google Drive 共享；其余资源状态记录在 [docs/resources.md](docs/resources.md)。
 
 ## 安装
 

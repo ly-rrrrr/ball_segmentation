@@ -4,6 +4,8 @@
 
 ## 1. SAM 候选生成（外部：SAM 权重；建议 GPU）
 
+官方模型：[facebook/sam-vit-huge](https://huggingface.co/facebook/sam-vit-huge)。下载完整模型目录到 `weights/sam/` 后运行：
+
 ```powershell
 python methods/01_sam_generation/run_sam_automatic_mask.py `
   --model-path weights/sam `
@@ -52,6 +54,8 @@ python methods/04_learned_seed/filter_sam_masks_by_learned_standard_seeds.py `
 
 ## 5. CNN v3（外部：SAM 数据、人工标签、训练或已发布权重；训练建议 GPU）
 
+已训练权重：[Google Drive v3/v4.1 权重文件夹](https://drive.google.com/drive/folders/1YxNJngJzs4wbboNhpb_cbjycBOqLfMAu?usp=drive_link)。将 v3 checkpoint 放到 `checkpoints/cnn_v3/cnn_prototype_model.pt`。
+
 ```powershell
 python methods/05_cnn_v3/export_combined_manual_cnn_dataset_upscaled_fast.py `
   --summary outputs/a8638/sam_summary.json `
@@ -72,6 +76,8 @@ python methods/05_cnn_v3/apply_cnn_prototype_classifier.py `
 效果：导出三通道 crop，训练分类器与类别原型，并输出候选概率、保留/拒绝 overlay 和统计 summary。
 
 ## 6. CNN v4.1（外部：2K 原图/SAM masks、训练或已发布权重；训练建议 GPU）
+
+已训练权重：[Google Drive v3/v4.1 权重文件夹](https://drive.google.com/drive/folders/1YxNJngJzs4wbboNhpb_cbjycBOqLfMAu?usp=drive_link)。将 v4.1 checkpoint 放到 `checkpoints/cnn_v41/cnn_scale_aware_model.pt`。
 
 ```powershell
 python methods/06_cnn_v4_v41/export_2k_manual_cnn_dataset_v4_from_candidates.py `

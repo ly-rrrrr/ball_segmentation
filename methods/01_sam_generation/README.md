@@ -2,6 +2,8 @@
 
 这一阶段使用 Hugging Face Transformers 的 SAM automatic-mask-generation pipeline 生成候选掩膜。脚本支持整图推理、规则网格切分、tile 放大后推理、掩膜回缩拼接，以及单掩膜、并集和 JSON 摘要导出。
 
+项目使用的官方 ViT-H 权重：[facebook/sam-vit-huge](https://huggingface.co/facebook/sam-vit-huge)。
+
 ```powershell
 python methods/01_sam_generation/run_sam_automatic_mask.py `
   --model-path weights/sam `
